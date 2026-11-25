@@ -1,0 +1,9 @@
+**/node_modules
+client/dist
+data
+.env
+.git
+Plan.md
+compose.yaml
+Dockerfile
+.env.example

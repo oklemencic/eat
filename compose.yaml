@@ -1,0 +1,38 @@
+# Betrieb hinter dem gemeinsamen Caddy-Container "caddy1" (HTTPS, Host eat.oliverklemencic.com).
+# Dessen Konfiguration (/root/caddy/caddy.json) leitet den Host an "eat:3000" im Docker-Netz
+# "postgres-network" weiter; Container-Name, Netz und Port bleiben deshalb gleich und Caddy muss nicht geändert werden.
+#
+# Start:  docker compose up -d --build
+# Vorher: Keine Zugangsdaten nötig. Der Signaturschlüssel für Sessions entsteht beim ersten Start in der Datenbank,
+#         der erste Benutzer wird in der Web-Oberfläche angelegt. Optional überschreibt SESSION_SECRET (Umgebung oder
+#         .env, nicht im Repo) den Schlüssel aus der Datenbank. Außerdem:
+#         mkdir -p data && chown 1000:1000 data   (der Container läuft als Benutzer "node", UID 1000)
+# Wechsel vom Platzhalter in /root/eat:  Platzhalter zuerst stoppen (gleicher Container-Name), siehe Plan.md.
+services:
+  app:
+    build: .
+    container_name: eat
+    restart: unless-stopped
+    environment:
+      # Optional (leer = Schlüssel aus der Datenbank)
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      TZ: ${TZ:-Europe/Vienna}
+      # Fest: Caddy erwartet eat:3000 (überschreibt PORT aus .env)
+      PORT: "3000"
+      # Genau ein Proxy (Caddy) davor: req.ip ist die Client-IP (Login-Sperre nach Fehlversuchen)
+      TRUST_PROXY: "1"
+    volumes:
+      - ./data:/data
+    networks:
+      default: {}
+      postgres-network:
+        aliases:
+          - eat
+    # Nur lokal erreichbar, z. B. zum Testen auf diesem Rechner; von außen läuft alles über Caddy
+    ports:
+      - "127.0.0.1:${HOST_PORT:-3000}:3000"
+    mem_limit: 256m
+
+networks:
+  postgres-network:
+    external: true
