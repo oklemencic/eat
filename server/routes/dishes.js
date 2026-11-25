@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { body, reqString, optString, num, bool, parseId, photoRef, notFound } from '../http.js';
+import { HttpError, body, reqString, optString, num, bool, parseId, photoRef, notFound } from '../http.js';
+import { LookupError } from '../lookup.js';
 
 const toApi = (row) => ({ ...row, favorite: !!row.favorite });
 
@@ -18,8 +19,22 @@ function parse(db, req) {
   };
 }
 
-export default function dishesRouter(db) {
+// search: Vorschlagssuche aus Open Food Facts (siehe dish-search.js) oder null (abgeschaltet)
+export default function dishesRouter(db, { search = null } = {}) {
   const r = Router();
+
+  // Vorschläge für fertige Gerichte (Nährwerte pro Portion bzw. pro 100 g), nichts wird gespeichert.
+  // 404: Abfrage abgeschaltet, 502: Dienst nicht erreichbar. Reihenfolge: vor /:id
+  r.get('/suggest', async (req, res) => {
+    const q = reqString(req.query.q, 'q', 100);
+    if (!search) throw notFound();
+    try {
+      res.json({ results: await search(q) });
+    } catch (e) {
+      if (e instanceof LookupError) throw new HttpError(502, e.message);
+      throw e;
+    }
+  });
 
   // ?favorite=1 und ?q=Suchtext (optional)
   r.get('/', (req, res) => {

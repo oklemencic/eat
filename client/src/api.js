@@ -69,6 +69,9 @@ export const api = {
   addDish: (dish) => request('POST', '/api/dishes', dish),
   updateDish: (id, dish) => request('PUT', `/api/dishes/${id}`, dish),
   deleteDish: (id) => request('DELETE', `/api/dishes/${id}`),
+  // Vorschläge für fertige Gerichte aus Open Food Facts: { results: [{ name, brand, basis: 'portion' | '100g', serving_g, kcal, protein, carbs, fat }] }
+  // (Werte pro Portion bzw. pro 100 g; fehlende = null). Wirft ApiError 404 (abgeschaltet) oder 502 (Dienst nicht erreichbar).
+  suggestDishes: (q) => request('GET', `/api/dishes/suggest${query({ q })}`),
 
   // Produkte (Barcode, Nährwerte pro 100 g). productByBarcode liefert null, wenn noch nicht angelegt.
   products: (params = {}) => request('GET', `/api/products${query(params)}`),
@@ -113,4 +116,10 @@ export const api = {
 
   // Gibt { id, url } zurück
   uploadPhoto: (blob) => request('POST', '/api/photos', undefined, { type: blob.type, data: blob }),
+
+  // Bildsuche bei Pexels/Pixabay (nur mit API-Keys am Server). stockProviders: { providers: [...] } (leer = nicht eingerichtet);
+  // stockSearch: { results: [{ provider, thumb, url, author, page }] }; importStockPhoto speichert das Bild wie einen Upload ({ id, url }).
+  stockProviders: () => request('GET', '/api/stock'),
+  stockSearch: (q) => request('GET', `/api/stock/search${query({ q })}`),
+  importStockPhoto: (provider, url) => request('POST', '/api/photos/stock', { provider, url }),
 };

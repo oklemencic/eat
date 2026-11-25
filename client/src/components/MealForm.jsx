@@ -93,7 +93,7 @@ export default function MealForm({ initial, categories, onSubmit, onDelete, subm
         Notiz
         <input value={note} maxLength={1000} onChange={(e) => setNote(e.target.value)} />
       </label>
-      <PhotoField value={photoId} onChange={setPhotoId} />
+      <PhotoField value={photoId} onChange={setPhotoId} query={name} />
 
       {shownError && <p className="error" role="alert">{shownError}</p>}
       <button className="primary" disabled={busy}>{submitLabel}</button>

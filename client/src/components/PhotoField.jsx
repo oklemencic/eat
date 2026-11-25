@@ -1,5 +1,6 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, photoUrl } from '../api.js';
+import StockPicker from './StockPicker.jsx';
 
 const MAX_SIDE = 1280;
 const ALLOWED = ['image/jpeg', 'image/png', 'image/webp'];
@@ -24,11 +25,26 @@ async function shrink(file) {
   throw new Error('Bildformat wird nicht unterstützt (JPEG, PNG oder WebP)');
 }
 
-// value: Foto-ID oder null; onChange erhält die neue ID bzw. null
-export default function PhotoField({ value, onChange }) {
+// Ob eine Bildsuche eingerichtet ist (API-Keys am Server), wird einmal je Seitenaufruf abgefragt
+let stockAvailable = null;
+function useStockAvailable() {
+  const [available, setAvailable] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    stockAvailable ??= api.stockProviders().then((r) => r.providers.length > 0, () => { stockAvailable = null; return false; });
+    stockAvailable.then((v) => alive && setAvailable(v));
+    return () => { alive = false; };
+  }, []);
+  return available;
+}
+
+// value: Foto-ID oder null; onChange erhält die neue ID bzw. null; query: Vorschlag für die Online-Bildsuche (z. B. Gerichtname)
+export default function PhotoField({ value, onChange, query = '' }) {
   const input = useRef(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [searching, setSearching] = useState(false);
+  const stock = useStockAvailable();
 
   async function pick(e) {
     const file = e.target.files[0];
@@ -53,8 +69,16 @@ export default function PhotoField({ value, onChange }) {
         <button type="button" disabled={busy} onClick={() => input.current.click()}>
           {busy ? 'Lädt hoch …' : value ? 'Foto ersetzen' : 'Foto hinzufügen'}
         </button>
+        {stock && !busy && !searching && <button type="button" onClick={() => setSearching(true)}>Online suchen</button>}
         {value && !busy && <button type="button" className="danger" onClick={() => onChange(null)}>Entfernen</button>}
       </div>
+      {searching && (
+        <StockPicker
+          initialQuery={query}
+          onPick={(id) => { onChange(id); setSearching(false); }}
+          onClose={() => setSearching(false)}
+        />
+      )}
       <input ref={input} type="file" accept="image/*" hidden onChange={pick} />
       {error && <p className="error" role="alert">{error}</p>}
     </div>

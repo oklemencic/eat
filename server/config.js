@@ -18,6 +18,13 @@ export function loadConfig(env = process.env) {
   const sessionDays = Number(env.SESSION_DAYS ?? 30);
   if (!Number.isFinite(sessionDays) || sessionDays <= 0) errors.push('SESSION_DAYS ist ungültig');
 
+  // Optional: API-Keys für die Bildsuche (Pexels, Pixabay). Ohne Key ist der Anbieter abgeschaltet.
+  const keyPattern = /^[A-Za-z0-9_-]+$/;
+  const pexelsKey = (env.PEXELS_API_KEY ?? '').trim();
+  const pixabayKey = (env.PIXABAY_API_KEY ?? '').trim();
+  if (pexelsKey && !keyPattern.test(pexelsKey)) errors.push('PEXELS_API_KEY enthält ungültige Zeichen');
+  if (pixabayKey && !keyPattern.test(pixabayKey)) errors.push('PIXABAY_API_KEY enthält ungültige Zeichen');
+
   if (errors.length) {
     throw new Error(`Ungültige Konfiguration:\n- ${errors.join('\n- ')}`);
   }
@@ -36,5 +43,7 @@ export function loadConfig(env = process.env) {
     trustProxy: env.TRUST_PROXY ? Number(env.TRUST_PROXY) || env.TRUST_PROXY : false,
     // Produktvorschläge aus Open Food Facts (nur der Barcode geht nach außen); PRODUCT_LOOKUP=off schaltet sie ab
     productLookupEnabled: env.PRODUCT_LOOKUP !== 'off',
+    pexelsKey,
+    pixabayKey,
   };
 }

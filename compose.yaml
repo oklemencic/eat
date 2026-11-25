@@ -17,6 +17,9 @@ services:
       # Optional (leer = Schlüssel aus der Datenbank)
       SESSION_SECRET: ${SESSION_SECRET:-}
       TZ: ${TZ:-Europe/Vienna}
+      # Optional: Bildsuche für Gerichte (leer = Anbieter aus). Keys nur in .env, nicht im Repo.
+      PEXELS_API_KEY: ${PEXELS_API_KEY:-}
+      PIXABAY_API_KEY: ${PIXABAY_API_KEY:-}
       # Fest: Caddy erwartet eat:3000 (überschreibt PORT aus .env)
       PORT: "3000"
       # Genau ein Proxy (Caddy) davor: req.ip ist die Client-IP (Login-Sperre nach Fehlversuchen)

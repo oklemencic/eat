@@ -13,6 +13,7 @@ import { usersRouter, accountRouter } from './routes/users.js';
 import dishesRouter from './routes/dishes.js';
 import productsRouter from './routes/products.js';
 import { createLookup } from './lookup.js';
+import { createDishSearch } from './dish-search.js';
 import mealsRouter from './routes/meals.js';
 import workoutsRouter from './routes/workouts.js';
 import weightsRouter from './routes/weights.js';
@@ -20,6 +21,8 @@ import settingsRouter from './routes/settings.js';
 import statsRouter from './routes/stats.js';
 import exchangeRouter from './routes/exchange.js';
 import { photosApiRouter, photosFileRouter } from './routes/photos.js';
+import stockRouter from './routes/stock.js';
+import { createStockSearch } from './stock.js';
 
 export function createApp(baseConfig) {
   const db = openDb(baseConfig.dataDir);
@@ -122,16 +125,23 @@ export function createApp(baseConfig) {
 
   app.use('/api/users', usersRouter(db));
   app.use('/api/account', accountRouter(db, { onChanged: setSessionCookie, limiter }));
-  app.use('/api/dishes', dishesRouter(db));
   // config.productLookup (Funktion) kann für Tests ersetzt werden; null = keine Abfrage externer Datenbanken
   const lookup = baseConfig.productLookup !== undefined ? baseConfig.productLookup : baseConfig.productLookupEnabled === false ? null : createLookup();
+  // Gericht-Vorschläge nutzen dieselbe Datenbank und dieselbe Abschaltung (PRODUCT_LOOKUP=off); config.dishSearch (Funktion) ersetzt sie im Test
+  const dishSearch = baseConfig.dishSearch !== undefined ? baseConfig.dishSearch : lookup ? createDishSearch({ lookup }) : null;
+  app.use('/api/dishes', dishesRouter(db, { search: dishSearch }));
   app.use('/api/products', productsRouter(db, { lookup }));
   app.use('/api/meals', mealsRouter(db));
   app.use('/api/workouts', workoutsRouter(db));
   app.use('/api/weights', weightsRouter(db));
   app.use('/api/settings', settingsRouter(db));
   app.use('/api/stats', statsRouter(db));
-  app.use('/api/photos', photosApiRouter(db, config));
+  // Bildsuche (Pexels/Pixabay) nur mit API-Key; config.stockSearch (Objekt) kann für Tests ersetzt werden
+  const stock = baseConfig.stockSearch !== undefined
+    ? baseConfig.stockSearch
+    : createStockSearch({ pexelsKey: baseConfig.pexelsKey, pixabayKey: baseConfig.pixabayKey });
+  app.use('/api/stock', stockRouter(stock));
+  app.use('/api/photos', photosApiRouter(db, config, { stock }));
   app.use('/api', exchangeRouter(db));
   app.use('/photos', photosFileRouter(db, config));
 

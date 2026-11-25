@@ -12,7 +12,13 @@ const MISS_TTL_MS = 10 * 60 * 1000;
 const MAX_CACHE = 500;
 
 // Fehler des Dienstes (Timeout, 5xx, Netz) im Unterschied zu "Produkt unbekannt" (null)
-export class LookupError extends Error {}
+export class LookupError extends Error {
+  // status: HTTP-Status des Dienstes, falls vorhanden (429 = zu viele Anfragen)
+  constructor(message, status = null) {
+    super(message);
+    this.status = status;
+  }
+}
 
 // Normalisierter Barcode (ohne führende Nullen) -> Code, wie ihn Open Food Facts führt:
 // EAN-8 bleibt 8-stellig, UPC-A/EAN-13 werden auf 13 Stellen aufgefüllt.
@@ -77,7 +83,7 @@ export function createLookup({ baseUrl = 'https://world.openfoodfacts.org', time
 
     let value = null;
     if (res.status !== 404) {
-      if (!res.ok) throw new LookupError(`Produktdatenbank antwortet mit Fehler ${res.status}`);
+      if (!res.ok) throw new LookupError(`Produktdatenbank antwortet mit Fehler ${res.status}`, res.status);
       const data = await res.json().catch(() => null);
       if (data?.status === 'success' && data.product) value = toSuggestion(barcode, data.product);
     }

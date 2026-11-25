@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { numText, parseNum } from '../lib/num.js';
 import CategorySelect from './CategorySelect.jsx';
 import PhotoField from './PhotoField.jsx';
+import DishSuggest from './DishSuggest.jsx';
 
 // Anlegen/Bearbeiten eines Gerichts. Nährwerte gelten pro Portion. dish = null: neues Gericht.
 // onSave erhält den Request-Body; onDelete ist nur beim Bearbeiten gesetzt.
@@ -15,6 +16,21 @@ export default function DishForm({ dish, categories, onSave, onDelete, busy, err
   const [favorite, setFavorite] = useState(dish?.favorite ?? false);
   const [photoId, setPhotoId] = useState(dish?.photo_id ?? null);
   const [localError, setLocalError] = useState('');
+  const [suggesting, setSuggesting] = useState(false);
+  const [hint, setHint] = useState('');
+
+  // Vorschlag aus der Online-Suche übernehmen: füllt Name und Nährwerte, gespeichert wird erst mit "Speichern"
+  function applySuggestion(s) {
+    setName(s.name.slice(0, 200));
+    setKcal(numText(s.kcal));
+    setProtein(numText(s.protein));
+    setCarbs(numText(s.carbs));
+    setFat(numText(s.fat));
+    setHint(s.basis === 'portion'
+      ? `Werte pro Portion (${numText(s.serving_g)} g) übernommen. Bitte prüfen.`
+      : 'Werte gelten pro 100 g, die Portionsgröße ist unbekannt. Bitte auf deine Portion umrechnen.');
+    setSuggesting(false);
+  }
 
   function submit(e) {
     e.preventDefault();
@@ -42,6 +58,9 @@ export default function DishForm({ dish, categories, onSave, onDelete, busy, err
         Name
         <input value={name} maxLength={200} onChange={(e) => setName(e.target.value)} autoFocus={!dish} />
       </label>
+      {!dish && !suggesting && <button type="button" onClick={() => setSuggesting(true)}>Fertiges Gericht online suchen</button>}
+      {suggesting && <DishSuggest initialQuery={name} onPick={applySuggestion} onClose={() => setSuggesting(false)} />}
+      {hint && <p className="muted small">{hint}</p>}
       <label>
         Kategorie
         <CategorySelect value={category} categories={categories} onChange={setCategory} />
@@ -57,7 +76,7 @@ export default function DishForm({ dish, categories, onSave, onDelete, busy, err
         <input type="checkbox" checked={favorite} onChange={(e) => setFavorite(e.target.checked)} />
         Favorit
       </label>
-      <PhotoField value={photoId} onChange={setPhotoId} />
+      <PhotoField value={photoId} onChange={setPhotoId} query={name} />
       {shownError && <p className="error" role="alert">{shownError}</p>}
       <button className="primary" disabled={busy}>Speichern</button>
       {onDelete && (

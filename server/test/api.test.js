@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createApp } from '../app.js';
 import { LookupError } from '../lookup.js';
+import { StockError } from '../stock.js';
 
 // Zugangsdaten entstehen zur Laufzeit und werden nirgends gespeichert.
 const password = randomBytes(12).toString('hex');
@@ -23,6 +24,17 @@ const config = {
     if (code === '9010158017486') return { barcode: code, name: 'Hafer-Müsli', brand: 'Billa', kcal_100: 437, protein_100: 9, carbs_100: 61, fat_100: 15, serving_g: null, source: 'openfoodfacts' };
     if (code === '1111111') throw new LookupError('Produktdatenbank nicht erreichbar');
     return null;
+  },
+  // Keine echten Abfragen im Test: Gericht-Vorschläge werden ersetzt
+  dishSearch: async (q) => {
+    if (q === 'ausfall') throw new LookupError('Produktdatenbank nicht erreichbar');
+    return q === 'leer' ? [] : [{ barcode: '1', name: 'Lasagne', brand: 'Billa', basis: 'portion', serving_g: 400, kcal: 600, protein: 28, carbs: 56, fat: 30, source: 'openfoodfacts' }];
+  },
+  // Keine echten Abfragen im Test: Bildsuche wird ersetzt
+  stockSearch: {
+    providers: ['pexels'],
+    search: async (q) => (q === 'ausfall' ? Promise.reject(new StockError('pexels nicht erreichbar')) : [{ provider: 'pexels', thumb: 'https://images.pexels.com/t.jpg', url: 'https://images.pexels.com/l.jpg', author: 'Anna', page: null }]),
+    download: async (provider, url) => (url.endsWith('/html.jpg') ? Buffer.from('<html>') : PNG),
   },
 };
 
@@ -367,6 +379,53 @@ test('Wochenstatistik', async () => {
 
 // 1x1-PNG
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+
+test('Gericht-Vorschläge: Suche, leere Suche, Dienstfehler, nichts wird gespeichert', async () => {
+  const before = (await api('GET', '/api/dishes')).body.length;
+  const found = await api('GET', '/api/dishes/suggest?q=Lasagne');
+  assert.equal(found.status, 200);
+  assert.equal(found.body.results[0].kcal, 600);
+  assert.deepEqual((await api('GET', '/api/dishes/suggest?q=leer')).body, { results: [] });
+  assert.equal((await api('GET', '/api/dishes/suggest')).status, 400);
+  assert.equal((await api('GET', '/api/dishes/suggest?q=ausfall')).status, 502);
+  assert.equal((await api('GET', '/api/dishes/suggest?q=x', undefined, { auth: false })).status, 401);
+  assert.equal((await api('GET', '/api/dishes')).body.length, before, 'Vorschläge legen keine Gerichte an');
+});
+
+test('Bildsuche: Anbieter, Suche, Übernahme eines Treffers als lokales Foto', async () => {
+  assert.deepEqual((await api('GET', '/api/stock')).body, { providers: ['pexels'] });
+  const found = await api('GET', '/api/stock/search?q=Spaghetti');
+  assert.equal(found.status, 200);
+  assert.equal(found.body.results[0].provider, 'pexels');
+  assert.equal((await api('GET', '/api/stock/search')).status, 400);
+  assert.equal((await api('GET', '/api/stock/search?q=ausfall')).status, 502);
+
+  const before = readdirSync(path.join(dataDir, 'photos')).length;
+  const ok = await api('POST', '/api/photos/stock', { provider: 'pexels', url: 'https://images.pexels.com/l.jpg' });
+  assert.equal(ok.status, 201);
+  const get = await api('GET', ok.body.url);
+  assert.equal(get.res.headers.get('content-type'), 'image/png');
+  assert.equal(readdirSync(path.join(dataDir, 'photos')).length, before + 1);
+
+  // Fremde Hosts, unbekannte Anbieter und Nicht-Bilder werden abgelehnt; es entsteht keine Datei
+  const rejected = [
+    ['pexels', 'http://127.0.0.1:3000/api/session'],
+    ['pexels', 'https://evil.example/l.jpg'],
+    ['pixabay', 'https://pixabay.com/get/l.jpg'], // Anbieter nicht eingerichtet
+    ['pexels', 42],
+  ];
+  for (const [provider, url] of rejected) {
+    assert.equal((await api('POST', '/api/photos/stock', { provider, url })).status, 400, String(url));
+  }
+  assert.equal((await api('POST', '/api/photos/stock', { provider: 'pexels', url: 'https://images.pexels.com/html.jpg' })).status, 502);
+  assert.equal(readdirSync(path.join(dataDir, 'photos')).length, before + 1);
+  assert.equal((await api('GET', '/api/stock', undefined, { auth: false })).status, 401);
+
+  // Aufräumen, damit die Foto-Zählungen der übrigen Tests unverändert bleiben
+  const { file } = db.prepare('SELECT file FROM photos WHERE id = ?').get(ok.body.id);
+  db.prepare('DELETE FROM photos WHERE id = ?').run(ok.body.id);
+  rmSync(path.join(dataDir, 'photos', file));
+});
 
 test('Fotos: Upload, Abruf, Typprüfung, Verknüpfung', async () => {
   const up = await api('POST', '/api/photos', undefined, { headers: { 'content-type': 'image/png' }, raw: PNG });

@@ -101,13 +101,14 @@ Das Profil enthält Konto (Passwort, Benutzerverwaltung), Einstellungen, Abmelde
 
 - `GET /api/session`, `POST /api/setup` (nur ohne Benutzer), `POST /api/login`, `POST /api/logout`
 - `GET/POST/DELETE /api/users`, `PUT /api/users/:id/password` (Administrator), `PUT /api/account/password`
-- `GET/POST/PUT/DELETE /api/dishes`
+- `GET/POST/PUT/DELETE /api/dishes`, `GET /api/dishes/suggest?q=…` (Vorschläge für fertige Gerichte aus Open Food Facts, speichert nichts)
 - `GET/POST/PUT/DELETE /api/products`, `GET /api/products/barcode/:code`, `GET /api/products/lookup/:code` (Vorschlag Open Food Facts), `POST /api/products/batch`
 - `GET/POST/PUT/DELETE /api/meals?date=…`
 - `GET/POST/PUT/DELETE /api/workouts`
 - `GET/POST/DELETE /api/weights`
 - `GET/PUT /api/settings`
 - `POST /api/photos` (Upload), `GET /photos/:id`
+- `GET /api/stock` (aktive Bildanbieter), `GET /api/stock/search?q=…` (Pexels/Pixabay), `POST /api/photos/stock` (gewählten Treffer übernehmen)
 - `GET /api/stats/week`, `GET /api/export`, `POST /api/import`
 
 ## Projektstruktur (Entwurf)
@@ -230,6 +231,20 @@ eat-source/
    Server-Tests dann 33, Client-Build ok; Lookup gegen die echte API geprüft, Oberfläche nicht im Browser/auf dem Handy.
    Bekannt: `BarcodeDetector` fehlt u. a. in Safari/iOS und Firefox; dort bleibt nur das Eintippen. Ein JS-Decoder (z. B. `@zxing/browser`)
    wäre die Ergänzung dafür. Produkte lassen sich bisher nur im Scan-Ablauf bearbeiten/löschen, nicht in der Gerichte-Ansicht.
+   Ergänzt 2026-11-25: Online-Bildsuche für Gerichte und Einträge (`server/stock.js`, `routes/stock.js`, `StockPicker.jsx`). Im Foto-Feld „Online suchen“
+   (Suchbegriff = Gerichtname) zeigt Treffer von Pexels und Pixabay; ein Klick lässt den Server das Bild herunterladen und wie einen Upload in
+   `data/photos` speichern (kein Hotlinking). Keys nur über `PEXELS_API_KEY` / `PIXABAY_API_KEY` (Umgebung bzw. `.env`, nicht im Repo); ohne Key ist
+   der Anbieter aus, ohne beide Keys erscheint der Knopf nicht. Lokal (ohne Docker) lädt `server/index.js` die `.env` im Projektordner selbst
+   (`process.loadEnvFile`, gesetzte Variablen haben Vorrang) und meldet beim Start „Bildsuche: Pixabay“ bzw. „aus“. Nach außen geht nur der Suchbegriff, generischer User-Agent. Der Server lädt nur von
+   den Bild-Hosts des Anbieters (`images.pexels.com`, `pixabay.com`, `cdn.pixabay.com`, https, Weiterleitungen einzeln geprüft, max. 10 MB, Typ per
+   Magic Bytes). Suchergebnisse 24 h im Speicher (Pixabay-Vorgabe). Quellenangabe (Fotograf, Anbieter) steht in der Trefferliste, wird aber nicht
+   mit dem Foto gespeichert.
+   Ergänzt 2026-11-25: Gericht-Vorschläge online (`server/dish-search.js`, `DishSuggest.jsx`). Im Formular „Neues Gericht“ sucht „Fertiges Gericht online
+   suchen“ in Open Food Facts (search-a-licious liefert nur Barcodes, die Nährwerte kommen aus der Barcode-Abfrage `lookup.js`). Werte pro Portion, wenn die
+   Portionsgröße bekannt ist, sonst pro 100 g mit Hinweis; Übernahme füllt nur das Formular, gespeichert wird erst mit „Speichern“. Open Food Facts bremst
+   Anfragen-Schübe (429): Nachschlagung in Dreiergruppen, bei Sperre Teilergebnis bzw. Meldung „bitte kurz warten“, Cache 1 h. Abschalten wie die
+   Barcode-Abfrage mit `PRODUCT_LOOKUP=off`. Bekannt: Trockenmischungen (z. B. „Fix für Lasagne“) tragen oft Nährwerte der trockenen Ware mit der Portionsgröße
+   des fertigen Gerichts; solche Vorschläge muss der Benutzer prüfen.
 
 ## Offene Punkte
 

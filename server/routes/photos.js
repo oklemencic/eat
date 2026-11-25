@@ -5,7 +5,8 @@ import express, { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { writeFile, unlink } from 'node:fs/promises';
 import path from 'node:path';
-import { HttpError, bad } from '../http.js';
+import { HttpError, bad, body } from '../http.js';
+import { StockError, isImageUrl } from '../stock.js';
 
 const TYPES = {
   'image/jpeg': 'jpg',
@@ -24,7 +25,27 @@ function matchesType(buf, mime) {
 export const PHOTO_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const PHOTO_FILE = /^[0-9a-f-]{36}\.(jpg|png|webp)$/;
 
-export function photosApiRouter(db, config) {
+// Typ anhand der Magic Bytes erkennen (für heruntergeladene Bilder ohne verlässlichen Content-Type)
+function sniffType(buf) {
+  return Object.keys(TYPES).find((mime) => matchesType(buf, mime)) ?? null;
+}
+
+// Datei und DB-Zeile anlegen; schlägt der DB-Eintrag fehl, wird die Datei wieder entfernt
+async function savePhoto(db, dir, userId, buf, mime) {
+  const id = randomUUID();
+  const file = `${id}.${TYPES[mime]}`;
+  await writeFile(path.join(dir, file), buf, { flag: 'wx' });
+  try {
+    db.prepare('INSERT INTO photos (id, user_id, file, mime) VALUES (?, ?, ?, ?)').run(id, userId, file, mime);
+  } catch (err) {
+    await unlink(path.join(dir, file)).catch(() => {});
+    throw err;
+  }
+  return { id, url: `/photos/${id}` };
+}
+
+// stock: Bildsuche (siehe stock.js) oder null
+export function photosApiRouter(db, config, { stock = null } = {}) {
   const r = Router();
   const dir = path.join(config.dataDir, 'photos');
 
@@ -33,17 +54,25 @@ export function photosApiRouter(db, config) {
     if (!TYPES[mime]) throw new HttpError(415, 'Content-Type must be image/jpeg, image/png or image/webp');
     if (!Buffer.isBuffer(req.body) || !req.body.length) throw bad('empty body');
     if (!matchesType(req.body, mime)) throw bad('file content does not match Content-Type');
+    res.status(201).json(await savePhoto(db, dir, req.user.id, req.body, mime));
+  });
 
-    const id = randomUUID();
-    const file = `${id}.${TYPES[mime]}`;
-    await writeFile(path.join(dir, file), req.body, { flag: 'wx' });
+  // Gewähltes Suchergebnis übernehmen: { provider, url }. Der Server lädt das Bild selbst herunter (nur von den
+  // Bild-Hosts des Anbieters) und speichert es lokal wie einen Upload.
+  r.post('/stock', async (req, res) => {
+    const { provider, url } = body(req);
+    if (!stock?.providers.includes(provider)) throw bad('provider is not available');
+    if (typeof url !== 'string' || !isImageUrl(provider, url)) throw bad('url is not allowed');
+    let buf;
     try {
-      db.prepare('INSERT INTO photos (id, user_id, file, mime) VALUES (?, ?, ?, ?)').run(id, req.user.id, file, mime);
-    } catch (err) {
-      await unlink(path.join(dir, file)).catch(() => {});
-      throw err;
+      buf = await stock.download(provider, url);
+    } catch (e) {
+      if (e instanceof StockError) throw new HttpError(502, e.message);
+      throw e;
     }
-    res.status(201).json({ id, url: `/photos/${id}` });
+    const mime = sniffType(buf);
+    if (!mime) throw new HttpError(502, 'Bildformat wird nicht unterstützt');
+    res.status(201).json(await savePhoto(db, dir, req.user.id, buf, mime));
   });
 
   return r;
